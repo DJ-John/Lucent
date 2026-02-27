@@ -6,7 +6,11 @@ html,
 body,
 #app {
   min-height: 100%;
-  overflow: hidden;
+}
+
+html,
+body {
+  overflow-x: hidden;
 }
 
 html {

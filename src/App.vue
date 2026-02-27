@@ -1,319 +1,64 @@
-﻿<script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { RouterLink, RouterView } from 'vue-router'
+<script setup lang="ts">
+import { onBeforeUnmount, ref } from 'vue'
+import { RouterView } from 'vue-router'
 
-interface Particle {
-  x: number
-  y: number
-  tx: number
-  ty: number
-  vx: number
-  vy: number
-  size: number
-  delay: number
-  twinkle: number
-  tint: string
-}
+const INTRO_GLYPH = '\u7d77'
+const INTRO_FONT_FAMILY = '"STXingkai", "STLiti", "FZShuTi", "Kaiti SC", "KaiTi", "Noto Serif SC", serif'
+const splitDuration = 2200
 
-interface Point {
-  x: number
-  y: number
-}
+const showIntro = ref(true)
+const isSplitting = ref(false)
 
-const navItems = [
-  { label: '主页', to: '/' },
-  { label: '关于', to: '/about' },
-  { label: '项目', to: '/projects' },
-  { label: '联系', to: '/contact' },
-]
+let splitTimer: number | null = null
 
-const INTRO_SEEN_KEY = 'lucent_intro_seen'
-const showIntro = ref(false)
-const introCanvas = ref<HTMLCanvasElement | null>(null)
-const introDuration = 3200
-const convergeDuration = 2200
-const disperseStart = 2600
-
-let introTimer: number | null = null
-let rafId: number | null = null
-let resizeDebounce: number | null = null
-let ctx: CanvasRenderingContext2D | null = null
-let particles: Particle[] = []
-let startTime = 0
-let viewportWidth = 0
-let viewportHeight = 0
-
-const randomEdgePoint = (width: number, height: number): Point => {
-  const edge = Math.floor(Math.random() * 4)
-  if (edge === 0) {
-    return { x: Math.random() * width, y: -30 }
-  }
-  if (edge === 1) {
-    return { x: width + 30, y: Math.random() * height }
-  }
-  if (edge === 2) {
-    return { x: Math.random() * width, y: height + 30 }
-  }
-  return { x: -30, y: Math.random() * height }
-}
-
-const createLogoPoints = (width: number, height: number): Point[] => {
-  const offscreen = document.createElement('canvas')
-  offscreen.width = 320
-  offscreen.height = 260
-
-  const offCtx = offscreen.getContext('2d')
-  if (!offCtx) {
-    return []
-  }
-
-  offCtx.clearRect(0, 0, offscreen.width, offscreen.height)
-  offCtx.fillStyle = '#ffffff'
-  offCtx.textAlign = 'center'
-  offCtx.textBaseline = 'middle'
-  offCtx.font = '700 170px Inter, Segoe UI, sans-serif'
-  offCtx.fillText('L', offscreen.width / 2, offscreen.height / 2 + 8)
-
-  const { data } = offCtx.getImageData(0, 0, offscreen.width, offscreen.height)
-  const points: Point[] = []
-  const gap = 5
-
-  for (let y = 0; y < offscreen.height; y += gap) {
-    for (let x = 0; x < offscreen.width; x += gap) {
-      const alpha = data[(y * offscreen.width + x) * 4 + 3]
-      if (alpha > 100) {
-        points.push({
-          x: width / 2 + (x - offscreen.width / 2) * 1.05,
-          y: height / 2 + (y - offscreen.height / 2) * 1.05,
-        })
-      }
-    }
-  }
-
-  return points
-}
-
-const setupIntroAnimation = (): void => {
-  const canvas = introCanvas.value
-  if (!canvas) {
+const handleSealClick = (): void => {
+  if (isSplitting.value) {
     return
   }
 
-  viewportWidth = window.innerWidth
-  viewportHeight = window.innerHeight
-
-  const dpr = Math.min(window.devicePixelRatio || 1, 2)
-  canvas.width = Math.floor(viewportWidth * dpr)
-  canvas.height = Math.floor(viewportHeight * dpr)
-  canvas.style.width = `${viewportWidth}px`
-  canvas.style.height = `${viewportHeight}px`
-
-  const nextCtx = canvas.getContext('2d')
-  if (!nextCtx) {
-    return
-  }
-
-  ctx = nextCtx
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-
-  const points = createLogoPoints(viewportWidth, viewportHeight)
-  particles = points.map((point, index) => {
-    const start = randomEdgePoint(viewportWidth, viewportHeight)
-    return {
-      x: start.x,
-      y: start.y,
-      tx: point.x,
-      ty: point.y,
-      vx: 0,
-      vy: 0,
-      size: 1 + Math.random() * 2,
-      delay: Math.random() * 500,
-      twinkle: Math.random() * Math.PI * 2,
-      tint: index % 6 === 0 ? '#d9e8ff' : '#8eb4ff',
-    }
-  })
-
-  startTime = performance.now()
-  if (rafId) {
-    window.cancelAnimationFrame(rafId)
-  }
-  animateIntro(startTime)
+  isSplitting.value = true
+  splitTimer = window.setTimeout(() => {
+    showIntro.value = false
+    splitTimer = null
+  }, splitDuration)
 }
-
-const animateIntro = (now: number): void => {
-  if (!ctx || !showIntro.value) {
-    return
-  }
-
-  const context = ctx
-  const elapsed = now - startTime
-  context.clearRect(0, 0, viewportWidth, viewportHeight)
-
-  particles.forEach((particle) => {
-    const local = elapsed - particle.delay
-    if (local <= 0) {
-      return
-    }
-
-    if (local < convergeDuration) {
-      particle.vx += (particle.tx - particle.x) * 0.055
-      particle.vy += (particle.ty - particle.y) * 0.055
-      particle.vx *= 0.85
-      particle.vy *= 0.85
-      particle.x += particle.vx
-      particle.y += particle.vy
-    } else {
-      const wobble = 0.8
-      particle.x += (particle.tx + Math.sin(now * 0.004 + particle.twinkle) * wobble - particle.x) * 0.2
-      particle.y += (particle.ty + Math.cos(now * 0.004 + particle.twinkle) * wobble - particle.y) * 0.2
-    }
-
-    let alpha = 1
-    if (elapsed > disperseStart) {
-      const disperseProgress = Math.min((elapsed - disperseStart) / (introDuration - disperseStart), 1)
-      const dx = particle.tx - viewportWidth / 2
-      const dy = particle.ty - viewportHeight / 2
-      const length = Math.hypot(dx, dy) || 1
-      particle.x += (dx / length) * disperseProgress * 2.8
-      particle.y += (dy / length) * disperseProgress * 2.8
-      alpha = 1 - disperseProgress
-    }
-
-    if (alpha <= 0.01) {
-      return
-    }
-
-    context.globalAlpha = alpha
-    context.fillStyle = particle.tint
-    context.shadowBlur = 12
-    context.shadowColor = particle.tint
-    context.beginPath()
-    context.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2)
-    context.fill()
-  })
-
-  context.globalAlpha = 1
-  context.shadowBlur = 0
-  rafId = window.requestAnimationFrame(animateIntro)
-}
-
-const handleResize = (): void => {
-  if (!showIntro.value) {
-    return
-  }
-
-  if (resizeDebounce) {
-    window.clearTimeout(resizeDebounce)
-  }
-
-  resizeDebounce = window.setTimeout(() => {
-    setupIntroAnimation()
-  }, 150)
-}
-
-const markIntroSeen = (): void => {
-  try {
-    window.localStorage.setItem(INTRO_SEEN_KEY, '1')
-  } catch {
-    // Ignore storage errors and fall back to showing intro next time.
-  }
-}
-
-const shouldShowIntro = (): boolean => {
-  try {
-    return window.localStorage.getItem(INTRO_SEEN_KEY) !== '1'
-  } catch {
-    return true
-  }
-}
-
-const finishIntro = (): void => {
-  showIntro.value = false
-  markIntroSeen()
-
-  if (introTimer) {
-    window.clearTimeout(introTimer)
-    introTimer = null
-  }
-
-  if (rafId) {
-    window.cancelAnimationFrame(rafId)
-    rafId = null
-  }
-
-  window.removeEventListener('resize', handleResize)
-}
-
-const startIntro = async (): Promise<void> => {
-  showIntro.value = true
-  await nextTick()
-
-  setupIntroAnimation()
-  window.addEventListener('resize', handleResize)
-
-  introTimer = window.setTimeout(() => {
-    finishIntro()
-  }, introDuration)
-}
-
-onMounted(() => {
-  if (shouldShowIntro()) {
-    void startIntro()
-  }
-})
 
 onBeforeUnmount(() => {
-  if (introTimer) {
-    window.clearTimeout(introTimer)
+  if (splitTimer) {
+    window.clearTimeout(splitTimer)
   }
-
-  if (resizeDebounce) {
-    window.clearTimeout(resizeDebounce)
-  }
-
-  if (rafId) {
-    window.cancelAnimationFrame(rafId)
-  }
-
-  window.removeEventListener('resize', handleResize)
 })
 </script>
 
 <template>
   <div class="layout-shell">
-    <header class="topbar">
-      <span class="brand">Lucent</span>
-      <nav class="nav-links">
-        <RouterLink
-          v-for="item in navItems"
-          :key="item.to"
-          :to="item.to"
-          class="nav-link"
-          active-class="is-active"
-        >
-          {{ item.label }}
-        </RouterLink>
-      </nav>
-    </header>
-
     <main class="page-wrap">
-      <RouterView v-slot="{ Component, route }">
-        <transition name="route-fade" mode="out-in">
-          <component :is="Component" :key="route.fullPath" />
-        </transition>
-      </RouterView>
+      <RouterView />
     </main>
   </div>
 
   <transition name="intro-fade">
-    <section v-if="showIntro" class="intro-screen" aria-label="开场动画">
-      <canvas ref="introCanvas" class="intro-canvas" aria-hidden="true"></canvas>
-      <div class="intro-content">
-        <p>粒子正在汇聚，准备进入主页</p>
-        <div class="intro-progress" role="presentation">
-          <span></span>
-        </div>
-      </div>
+    <section
+      v-if="showIntro"
+      class="seal-screen"
+      :class="{ 'is-splitting': isSplitting }"
+      aria-label="intro overlay"
+    >
+      <div class="split-panel split-left"></div>
+      <div class="split-panel split-right"></div>
+      <div class="split-crack" aria-hidden="true"></div>
+
+      <button
+        type="button"
+        class="seal-trigger"
+        :disabled="isSplitting"
+        aria-label="click glyph to enter home"
+        @click="handleSealClick"
+      >
+        <span class="seal-ring inner-ring" aria-hidden="true"></span>
+        <span class="seal-ring outer-ring" aria-hidden="true"></span>
+        <span class="seal-glyph">{{ INTRO_GLYPH }}</span>
+      </button>
     </section>
   </transition>
 </template>
@@ -321,137 +66,165 @@ onBeforeUnmount(() => {
 <style scoped lang="scss">
 .layout-shell {
   min-height: 100vh;
-  padding: 1.25rem 1.25rem 2rem;
-  background: radial-gradient(circle at 20% 20%, #1d2555 0%, #0a0f20 45%, #060913 100%);
-  color: #eaf0ff;
-}
-
-.topbar {
-  width: min(980px, 92vw);
-  margin: 0 auto;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-}
-
-.brand {
-  font-weight: 700;
-  font-size: 1.05rem;
-}
-
-.nav-links {
-  display: flex;
-  gap: 0.55rem;
-  flex-wrap: wrap;
-}
-
-.nav-link {
-  color: #d9e4ff;
-  text-decoration: none;
-  border: 1px solid rgba(217, 228, 255, 0.28);
-  border-radius: 999px;
-  padding: 0.28rem 0.78rem;
-  font-size: 0.88rem;
-}
-
-.nav-link:hover {
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.52);
-}
-
-.nav-link.is-active {
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.75);
-  background: rgba(123, 161, 255, 0.16);
+  background: radial-gradient(circle at 20% 16%, #f8fbff 0%, #edf3ff 44%, #dde7ff 100%);
+  color: #1b2540;
 }
 
 .page-wrap {
-  width: min(980px, 92vw);
-  margin: 1.25rem auto 0;
+  min-height: 100vh;
 }
 
-.route-fade-enter-active,
-.route-fade-leave-active,
 .intro-fade-enter-active,
 .intro-fade-leave-active {
-  transition: opacity 0.32s ease;
+  transition: opacity 0.4s ease;
 }
 
-.route-fade-enter-from,
-.route-fade-leave-to,
 .intro-fade-enter-from,
 .intro-fade-leave-to {
   opacity: 0;
 }
 
-.intro-screen {
+.seal-screen {
   position: fixed;
   inset: 0;
-  text-align: center;
-  background: linear-gradient(150deg, #04050b 0%, #121a3d 55%, #1f2d65 100%);
-  overflow: hidden;
   z-index: 999;
-}
-
-.intro-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.intro-content {
-  position: absolute;
-  left: 50%;
-  bottom: 10vh;
-  transform: translateX(-50%);
-  z-index: 2;
+  overflow: hidden;
   display: grid;
   place-items: center;
-  width: min(520px, 88vw);
-  gap: 0.8rem;
-  padding: 1rem 1.2rem;
 }
 
-.intro-screen p {
-  color: rgba(234, 240, 255, 0.85);
-  font-size: 0.98rem;
+.split-panel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50.2%;
+  background: #111a3b;
+  transition: transform 2s cubic-bezier(0.22, 0.82, 0.2, 1);
 }
 
-.intro-progress {
-  width: min(60vw, 360px);
-  height: 5px;
-  margin-top: 0.7rem;
-  border-radius: 999px;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.2);
+.split-left {
+  left: 0;
+  transform-origin: left center;
 }
 
-.intro-progress span {
-  display: block;
-  width: 100%;
+.split-right {
+  right: 0;
+  transform-origin: right center;
+}
+
+.split-crack {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 2px;
   height: 100%;
-  transform-origin: left;
-  background: linear-gradient(90deg, #79a0ff 0%, #f0f6ff 100%);
-  animation: loading 3s ease-out forwards;
+  transform: translateX(-50%);
+  opacity: 0;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0),
+    rgba(142, 189, 255, 0.95) 25%,
+    rgba(226, 240, 255, 0.95) 50%,
+    rgba(142, 189, 255, 0.95) 75%,
+    rgba(255, 255, 255, 0)
+  );
 }
 
-@keyframes loading {
+.seal-trigger {
+  position: relative;
+  z-index: 2;
+  width: min(54vw, 300px);
+  aspect-ratio: 1;
+  border: none;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  cursor: pointer;
+  overflow: visible;
+  isolation: isolate;
+}
+
+.seal-ring {
+  position: absolute;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.inner-ring {
+  inset: 12%;
+  border: 2px solid rgba(170, 239, 255, 0.48);
+  box-shadow:
+    0 0 8px rgba(163, 236, 255, 0.5),
+    0 0 18px rgba(99, 219, 255, 0.28),
+    inset 0 0 10px rgba(211, 250, 255, 0.2);
+}
+
+.outer-ring {
+  inset: -2%;
+  border: 1.8px solid rgba(156, 189, 255, 0.4);
+  box-shadow: 0 0 12px 2px rgba(118, 162, 255, 0.22);
+  animation: outer-ring-breath 3.2s ease-in-out infinite;
+}
+
+.seal-glyph {
+  position: relative;
+  z-index: 2;
+  color: #f2dfbf;
+  font-family: v-bind(INTRO_FONT_FAMILY);
+  font-size: clamp(7rem, 17vw, 12rem);
+  line-height: 1;
+  text-shadow:
+    0 0 12px rgba(255, 232, 196, 0.65),
+    0 0 28px rgba(128, 173, 243, 0.5),
+    0 0 48px rgba(128, 173, 243, 0.36);
+}
+
+.seal-screen.is-splitting .split-left {
+  transform: translateX(-100%) scaleX(0.14);
+}
+
+.seal-screen.is-splitting .split-right {
+  transform: translateX(100%) scaleX(0.14);
+}
+
+.seal-screen.is-splitting .split-crack {
+  animation: crack-flash 0.8s ease-out forwards;
+}
+
+.seal-screen.is-splitting .seal-trigger {
+  animation: glyph-fade 0.3s ease forwards;
+}
+
+@keyframes crack-flash {
   0% {
-    transform: scaleX(0);
+    opacity: 0;
+  }
+
+  20% {
+    opacity: 0.95;
   }
 
   100% {
-    transform: scaleX(1);
+    opacity: 0;
   }
 }
 
-@media (max-width: 640px) {
-  .topbar {
-    flex-direction: column;
-    align-items: flex-start;
+@keyframes glyph-fade {
+  to {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes outer-ring-breath {
+  0%,
+  100% {
+    box-shadow: 0 0 12px 2px rgba(118, 162, 255, 0.2);
+  }
+
+  50% {
+    box-shadow: 0 0 30px 12px rgba(118, 162, 255, 0.26);
   }
 }
 </style>
-
