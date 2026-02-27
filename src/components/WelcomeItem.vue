@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="item">
     <i>
       <slot name="icon"></slot>
@@ -12,7 +12,7 @@
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .item {
   margin-top: 2rem;
   display: flex;
@@ -85,3 +85,4 @@ h3 {
   }
 }
 </style>
+
